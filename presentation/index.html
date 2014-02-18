@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="en">
+
+	<head>
+		<meta charset="utf-8">
+
+		<title>Building Web-Applications with Python and WSGI</title>
+
+		<meta name="description"
+           content="a (maybe not so) gentle introduction to the basics of WSGI">
+		<meta name="author" content="Johannes Klug">
+
+		<meta name="apple-mobile-web-app-capable" content="yes" />
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+		<link rel="stylesheet" href="css/reveal.min.css">
+		<link rel="stylesheet" href="css/theme/default.css" id="theme">
+
+		<!-- For syntax highlighting -->
+		<link rel="stylesheet" href="lib/css/zenburn.css">
+
+		<!-- If the query includes 'print-pdf', use the PDF print sheet -->
+		<script>
+			document.write( '<link rel="stylesheet" href="css/print/' + ( window.location.search.match( /print-pdf/gi ) ? 'pdf' : 'paper' ) + '.css" type="text/css" media="print">' );
+		</script>
+
+		<!--[if lt IE 9]>
+		<script src="lib/js/html5shiv.js"></script>
+		<![endif]-->
+	</head>
+
+	<body>
+
+		<div class="reveal">
+
+			<!-- Any section element inside of this container is displayed as a slide -->
+			<div class="slides">
+				<section>
+                    <h1>Building Web-Applications with Python
+                        <small>(and WSGI)</small></h1>
+                    <h3>a (maybe not so) gentle introduction to the basics of WSGI</h3>
+					<p>
+						<small>Johannes Klug <a href="http://twitter.com/room2tweet">@room2tweet</a></small>
+					</p>
+				</section>
+
+
+				<!-- Example of nested vertical slides -->
+				<section>
+					<section>
+                        <h2>Building web apps in Python is actually quite easy!</h2>
+                        <pre class="fragment"><code data-trim contenteditable>
+from some_magical_place import app
+
+@app.route('/')
+def hello():
+    return 'Hello World!'
+ 
+app.run()
+                        </code></pre>
+                        <p class="fragment">That's actually (almost) working code.</p>
+					</section>
+                    <section>
+                        <h2>Flask web framework</h2>
+                        <p>If you want to get started quickly <code>pip install flask</code> and replace</p>
+                        <pre><code data-trim contenteditable>
+from some_magical_place import app
+                        </code></pre>
+                        <p class="fragment">with</p>
+                        <pre class="fragment"><code data-trim contenteditable>
+from flask import Flask
+app = Flask(__name__)
+                        </code></pre>
+                    </section>
+					<section>
+                        <h2>Flask!</h2>
+                        <pre class="fragment"><code data-trim contenteditable>
+from flask import Flask
+app = Flask(__name__)
+
+@app.route('/')
+def hello():
+    return 'Hello World!'
+ 
+app.run()
+                        </code></pre>
+                        <p class="fragment">That's working code.</p>
+					</section>
+                    <section>
+                        <h2>Doing is fun...</h2>
+                        <p>...but it's obviously more fun if you actually know
+                        what you're doing.</p>
+                        <p>So let's take a look behind some of the magic behind
+                        that innocent looking snippet of code.</p>
+                    </section>
+                    <section>
+                        <h2>Goal of todays talk.</h2>
+                        <p>Understand the basic principles of HTTP and Gateway
+                        interfaces and build a little web app in Python without
+                        any thirdparty libraries.</p>
+                        <p><strong>Disclaimer</strong>: don't expect anything that's
+                        production-ready. In reality you will want to rely on
+                        frameworks to do the "dirty work" of handling the HTTP
+                        stack for you.</p>
+                    </section>
+				</section>
+
+                <section>
+                    <section>
+                        <h2>Before we get our hands dirty...</h2>
+                        <p>...here's some theory.</p>
+                    </section>
+                    <section>
+                        <h2>HTTP and the principle of REST</h2>
+                        <p>HTTP is...</p>
+                        <ul>
+                            <li class="fragment">Communication between client
+                            and server via request and response.</li>
+                            <li class="fragment">Request and response each
+                            contain a header and a body.</li>
+                            <li class="fragment">Header: collection of
+                            key-value pairs</li>
+                            <li class="fragment">Body: pretty much any type of
+                            data, encoded as string (i.e. plain text, JSON,
+                            BASE64-encoded binary)</li>
+                            <li class="fragment">Body may be empty, Header
+                            cannot.</li>
+                        </ul>
+                    </section>
+                    <section>
+                        <h2>Request types</h2>
+                        <p>Request can be of different types (called HTTP verbs)</p>
+                        <ul>
+                            <li class="fragment">GET: "get" a certain HTTP resource</li>
+                            <li class="fragment">POST: send data to HTTP resource</li>
+                            <li class="fragment">PUT: send data to specific location on server.</li>
+                            <li class="fragment">DELETE: delete data from specific location.</li>
+                            <li class="fragment">some more (HEAD, OPTIONS, PATCH, ...)</li>
+                        </ul>
+                    </section>
+                    <section>
+                        <h2>Response stati</h2>
+                        <p>Server can respond with a number of status codes</p>
+                        <ul>
+                            <li>2xx: everything OK.</li>
+                            <li>3xx: look somewhere else.</li>
+                            <li>4xx: you're doing it wrong.</li>
+                            <li>5xx: sorry, I screwed up. Try again.</li>
+                        </ul>
+                    </section>
+                    <section>
+                        <h2>The principle of REST</h2>
+                        <p>HTTP is a stateless protocol.</p>
+                        <p>"Stateless" means, all information necessary for
+                        communication is contained in request and response.
+                        The client cannot expect the server to remember what 
+                        happened in a previous request.</p>
+                    </section>
+
+                    <section>
+                        <h2>Example request</h2>
+                        <pre><code data-trim>
+$ curl -v http://www.google.com/?q=some_search
+&gt; GET /?q=some_search HTTP/1.1
+&gt; User-Agent: curl/7.27.0
+&gt; Host: www.google.com
+&gt; Accept: */*
+&gt; 
+                        </pre></code>
+                    </section>
+
+                    <section>
+                        <h2>Example response</h2>
+                        <pre><code data-trim>
+&lt; HTTP/1.1 200 OK
+&lt; Date: Fri, 13 Dec 2013 15:01:16 GMT
+&lt; Expires: -1
+&lt; Cache-Control: private, max-age=0
+&lt; Content-Type: text/html; charset=ISO-8859-1
+&lt;
+&lt;!doctype html&gt;
+&lt;html itemscope=&quot;&quot; itemtype=&quot;http://schema.org/WebPage&quot;&gt;
+&lt;head&gt;
+&lt;meta content=&quot;Search the world's information, including webpages, images, videos and more. Google has many special features to help you find exactly what you're looking for.&quot; name=&quot;description&quot;&gt;[...]
+                        </pre></code>
+                        <aside class="notes">
+                            <p>What happens here is the following:</p>
+                            <ul>
+                                <li>client requests to GET the ressource
+                                `/?q=some_search` using the protocol
+                                specification HTTP/1.1 at the host www.google,
+                                identifying himself as the program curl,
+                                accepting any content format Google may
+                                consider appropriate.</li>
+                                <li>the client does not send any content other
+                                than what's specified in the request headers
+                                (this is the most common scenario).</li>
+                                <li>Google tells the client everything went ok,
+                                and gives some caching information</li>
+                                <li>Google also informs us that it will deliver
+                                us html, encoded in ISO-8859-1 encoding.</li>
+                                <li>After the headers there is a blank line</li>
+                                <li>As content, Google delivers us the search
+                                results page as html.</li>
+                            </ul>
+                            <p>That is, in a nutshell, the way HTTP works
+                            (there's obviously more know about that, see
+                            references). With that in mind we can move on to
+                            the idea of Gateway interfaces.</p>
+                        </aside>
+                    </section>
+                </section>
+                <section>
+                    <section>
+                        <h2>CGI - the archetypal Gateway Interface</h2>
+                        <p>CGI (Common Gateway Interface) was devised to specify
+                        how a web server could deliver dynamic content to the client
+                        by calling executable scripts</p>
+                        <ul>
+                            <li>server exposes cgi binary directory to client</li>
+                            <li>client can request execution of cgi-scripts</li>
+                            <li>cgi script can be any executable file</li>
+                            <li>request is read from stdin, response is written
+                            to stdout, logging information to stderr.</li>
+                            <li>application can access request and server data
+                            via environment variables</li>
+                        </ul>
+                    </section>
+                    <section>
+                        <h2>Advantages of CGI</h2>
+                        <ul>
+                            <li>simple and effective</li>
+                            <li>any programming language supported by server OS
+                            can be used (Perl, Java, C++, Haskell, Python... even
+                            bash)</li>
+                            <li>server stack is simple, web server and application
+                            communicate via IO-streams</li>
+                            <li>communication over IO-streams is convenient in
+                            Unix-environments (pipe-and-filter architecture).</li>
+                            <li>many languages have CGI convenience wrappers (Python: <code>import cgi</code>)</li>
+                            <li>all major web servers support CGI</li>
+
+                    </section>
+                        <section>
+                            <h2>Drawbacks of CGI</h2>
+                            <p>Performance...:</p>
+                            <ul>
+                                <li>effective does not imply efficient (unfortunately)</li>
+                                <li>every request starts new instance</li>
+                                <li>every instance is discarded after request</li>
+                                <li>if a cgi script takes long for startup it affects
+                                server performance</li>
+                            </ul>
+                            <p>Also: CGI has some security concerns, even though they
+                            can be worked around by a good server configuration.</p>
+                        </section>
+                        <section>
+                            <h2>Performance is a big problem</h2>
+                            <p>The performance issue is a dealbreaker for many modern
+                            web applications.</p>
+
+                            <ul>
+                                <li>Large webframeworks can take seconds to start up.</li>
+                                <li>Large web applications (e.g. Redmine) can take half 
+                                a minute to deliver first request (depending on server performance).</li>
+                            </ul>
+                            <p><br />CGI-based deployment is often infeasible.</p>
+                        </section>
+                    </section>
+                    <section>
+                    <section>
+                        <h2>"Preforking" Gateway Interfaces</h2>
+                        <p>Modern gateway interfaces "prefork" the application process.</p>
+                        <ul>
+                            <li>Application process is started before first request
+                            hits.</li>
+                            <li>Process lives on after request is processed.</p>
+                            <li>App process may serve more than one request.</li>
+                            <li>For concurrent requests the server has to spawn 
+                            multiple application processes.</li>
+                        </ul>
+                    </section>
+
+                    <section>
+                        <h2>"Preforking" Gateway Interfaces</h2>
+                        <img src="preforking.png" />
+                    </section>
+
+                    <section>
+                        <h2>"Preforking" Gateway Interfaces</h2>
+                        <p>Examples:</p>
+                        <ul>
+                            <li>WSGI (Python)</li>
+                            <li>Rack (Ruby)</li>
+                            <li>JSGI/Jack (JavaScript)</li>
+                            <li>PSGI/Plack (Perl)</li>
+                            <li>WAI (Haskell)</li>
+                        </ul>
+                        <p>WSGI inspired Rack, which in turn inspired Jack and Plack</p>
+                    </section>
+
+                    <section>
+                        <h2>"Preforking" Gateway Interfaces</h2>
+                        <ul>
+                            <li>Application is dispatched via a callable, e.g. a function.</li>
+                            <li>Callable takes a dictionary (or list of key-value pairs) of enviroment variables as parameter.</li>
+                            <li>Callable returns HTTP status code, HTTP headers and content as response.</li>
+                            <li>CGI communicates via pipe-and-filter, preforking gateway
+                            interfaces communicate via functional interface.</li>
+                        </ul>
+                    </section>
+                    <section>
+                        <h2>"Preforking" Gateway Interfaces</h2>
+                        <p>example in pseudo-code</p>
+                        <pre><code data-trim>
+function application(environment) {
+  status = "200 OK";  // set http status 
+  headers = [ "content-type: text/plain" ];  // set headers
+  content = [ "Hello world!\n", "How are you today?\n" ]; // prepare content
+   
+  return (status, headers, content); // return http response
+}
+                        </pre></code>
+                    </section>
+                </section>
+                
+                <section>
+                    <section>
+                        <h2>WSGI - The Webserver Gateway Interface</h2>
+                        <p>WSGI was specified to propose a standard interface 
+                        between web servers and Python web applications.</p>
+                        <ul>
+                            <li>Distinguishes between two sides: server/gateway and
+                            application/framework.</li>
+                            <li>The server invokes a callable object that is
+                            provided by the application.</li>
+                        </ul>
+                    </section>
+
+                    <section>
+                        <h2>WSGI - the application side</h2>
+                        <ul>
+                            <li>application object is a callable object</li>
+                            <li>app object accepts two arguments: the environment dictionary and a callable (start_response)</li>
+                            <li>start_response takes (at least) two arguments</li>
+                            <li>object can be anything that can be called "like a function"</li>
+                        </ul>
+
+                        <p>Example:</p>
+                        <pre><code data-trim>
+def hello_world(environment, start_response):
+    status = "200 OK" 
+    headers = [("content-type", "text/plain")]
+    content = ["Hello world!\n", "How are you today?\n"]
+    
+    start_response(status, headers)   
+    return content
+                        </pre></code>
+                    </section>
+                    <section>
+                        <h2>WSGI - the gateway/server side</h2>
+                        <p>The gateway has to invoke the application callable
+                        for each request</p>
+                        <pre><code data-trim>
+def cgi_gateway(application):
+    # [...]
+    def write(data):
+        """ helper method used to write content to stdout """
+        # [...]
+    
+    def start_response(status, response_headers, exc_info=None):
+        """ may only be called once, unless exc_info is given """
+        if exc_info:
+            # raise exception
+        elif headers_set:
+            raise Exception('headers already set')
+        
+        headers_set[:] = [status, response_headers]
+        return write
+        
+    # call application
+    environ = dict(os.environ.items())
+    result = application(environ, start_response)
+    # write data
+    for data in result:
+        if data:
+            write(data)
+    # send headers
+    # [...]
+                        </pre></code>
+                        <p>Code taken from PEP 333.</p>
+                    </section>
+                    <section>
+                        <h2>Running a WSGI-compatible application</h2>
+                        <p>(At least) two methods: wsgiref (for development),
+                        uwsgi for production.</p>
+                        <p>uwsgiref: Python reference implementation of WSGI.</p>
+                        <pre><code data-trim>
+def hello_world(environment, start_response):
+    """ hello world app as defined above """
+    # [...]
+    
+if __name__ == '__main__':
+    from wsgiref.simple_server import make_server
+    httpd = make_server('', 8000, hello_world)
+    print "Serving on port 8000..."
+    httpd.serve_forever()
+                        </pre></code>
+                    </section>
+                    <section>
+                        <h2>uWSGI</h2>
+                        <p>uWSGI is a very advanced WSGI implementation and
+                        supports a lot of niceties, e.g. multiple application
+                        instances. It plays nicely with reverse proxy web
+                        servers, e.g. nginx.</p>
+                        <p>You can get it very conveniently via pip.</p>
+                    </section>
+                </section>
+
+                <section>
+                    <section>
+                        <h2>time to do something useful... -ish</h2>
+                        <p>We'll use what we have now learned to build a little
+                        webapp.</p>
+                        <p>JSONStore. A web api to store and traverse a JSON
+                        object.</p>
+                    </section>
+
+                    <section>
+                        <h2>User stories for our JSONStore API</h2>
+                        <ul>
+                            <li>I want to be able to send and store a JSON
+                            document at the root url.</li>
+                            <li>I want to be able to look at a subpart of the
+                            JSON document by entering a resource identifier
+                            corresponding to the document path.</li>
+                            <li>I want to be able to modify parts of the JSON
+                            document by sending another JSON document to the
+                            resource identifier of the document part.</li>
+                        </ul>
+                    </section>
+
+                    <section>
+                        <h2>Examples - pt I</h2>
+                        <pre><code data-trim>
+PUT /
+
+Content:
+{
+    "sniffles": [
+        {"name": "fred"},
+        {"name": "irma"},
+        {"name": "wobble"}
+    ],
+    "snuffle": {"name": "gundar"}
+}
+                        </pre></code>
+
+                        <pre><code data-trim>
+GET /sniffles/
+
+Response:
+[
+        {"name": "fred"},
+        {"name": "irma"},
+        {"name": "wobble"}
+]
+                        </pre></code>
+                    </section>
+
+                    <section>
+                        <h2>Examples - pt II</h2>
+                        <pre><code data-trim>
+GET /sniffles/0
+
+Response:
+{"name": "fred"}
+                        </pre></code>
+
+                        <pre><code data-trim>
+PUT /sniffles/0/rank
+
+Content:
+"sniffle chief"
+                        </pre></code>
+                        <pre><code data-trim>
+GET /sniffles/0
+
+Response:
+{
+    "name": "fred",
+    "rank": "sniffle chief"
+}
+                        </pre></code>
+                    </section>
+                </section>
+                <section>
+                    <h2>A word of advice when building your own web applications</h2>
+                    <p>Don't (!) build your web application using low-level Python
+                    libraries, unless you know what you're doing.</p>
+                    <p>Good reasons to roll your own stack:</p>
+                    <ul>
+                        <li>Learning more about WSGI and HTTP.</li>
+                        <li>Your particular project has constraints no framework
+                        can satisfy (e.g. regulatory ISO-constraints).</li>
+                        <li>You only need a very limited set of features you
+                        can oversee yourself.</li>
+                    </ul>
+                    <p>Bad reasons to roll your own stack:</p>
+                    <ul>
+                        <li>You're better than all those other web developers
+                        who built the existing frameworks.</li>
+                        <li>You don't like the way framework XYZ has implemented
+                        a certain feature.</li>
+                        <li>You don't trust other developers' code.</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <h2>A number of good Python frameworks using wSGI</h2>
+                    <ul>
+                        <li>Flask (very lightweight, based on Werkzeug)</li>
+                        <li>Django (also very good and full-featured)</li>
+                        <li>Werkzeug (very basic WSGI-support layer, my favorite)</li>
+                        <li>Tornado (good for asynchronous stuff)</li>
+                        <li>web.py</li>
+                        <li>Cherry.py</li>
+                    </ul>
+                    <p>Most people these days use Django. There are also tons of
+                    other web frameworks out there.</p>
+                </section>
+
+
+                <section>
+                    <h2>That's it.</h2>
+                    <h3>Now it's time for questions.</h3>
+                </section>
+                <section>
+                    <h2>References and Recommended Reading</h2>
+                    <ul>
+                        <li>Deploying CGI-applications with uWSGI:<br />
+                        <a href="http://uwsgi-docs.readthedocs.org/en/latest/CGI.html">
+                            http://uwsgi-docs.readthedocs.org/en/latest/CGI.html</a>
+                        </li>
+                        <li>Building CGI-applications with bash-script: <br />
+                        <a href="http://www.team2053.org/docs/bashcgi/index.html">
+                            http://www.team2053.org/docs/bashcgi/index.html</a>
+                        </li>
+                        <li>Specification of CGI: <br />
+                        <a href="http://tools.ietf.org/html/rfc3875 (CGI Version 1.1)">
+                            http://tools.ietf.org/html/rfc3875 (CGI Version 1.1)</a>
+                        </li>
+                        <li>Some general information on Python and web application:<br />
+                        <a href="http://docs.python.org/2/howto/webservers.html">
+                            http://docs.python.org/2/howto/webservers.html</a>
+                        </li>
+                        <li>Python PEP333 (WSGI specification):<br />
+                        <a href="http://www.python.org/dev/peps/pep-0333/">
+                            http://www.python.org/dev/peps/pep-0333/</a>
+                        </li>
+                        <li>Getting started with WSGI by Armin Ronacher:<br />
+                        <a href="http://lucumr.pocoo.org/2007/5/21/getting-started-with-wsgi/">
+                            http://lucumr.pocoo.org/2007/5/21/getting-started-with-wsgi/</a>
+                        </li>
+                </section>
+
+
+
+
+
+
+			</div>
+
+		</div>
+
+		<script src="lib/js/head.min.js"></script>
+		<script src="js/reveal.min.js"></script>
+
+		<script>
+
+			// Full list of configuration options available here:
+			// https://github.com/hakimel/reveal.js#configuration
+			Reveal.initialize({
+				controls: true,
+				progress: true,
+				history: true,
+				center: true,
+
+				theme: Reveal.getQueryHash().theme, // available themes are in /css/theme
+				transition: Reveal.getQueryHash().transition || 'default', // default/cube/page/concave/zoom/linear/fade/none
+
+				// Parallax scrolling
+				// parallaxBackgroundImage: 'https://s3.amazonaws.com/hakim-static/reveal-js/reveal-parallax-1.jpg',
+				// parallaxBackgroundSize: '2100px 900px',
+
+				// Optional libraries used to extend on reveal.js
+				dependencies: [
+					{ src: 'lib/js/classList.js', condition: function() { return !document.body.classList; } },
+					{ src: 'plugin/markdown/marked.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+					{ src: 'plugin/markdown/markdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+					{ src: 'plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } },
+					{ src: 'plugin/zoom-js/zoom.js', async: true, condition: function() { return !!document.body.classList; } },
+					{ src: 'plugin/notes/notes.js', async: true, condition: function() { return !!document.body.classList; } }
+				]
+			});
+
+		</script>
+
+	</body>
+</html>
